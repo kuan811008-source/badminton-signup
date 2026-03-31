@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>管理後台 - 羽球報名系統</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .tab-active { background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl shadow-xl p-8 w-full max-w-sm">
+      <div class="text-center mb-7">
+        <div class="text-5xl mb-3">🏸</div>
+        <h1 class="text-xl font-bold text-gray-800">管理後台登入</h1>
+      </div>
+      <div class="space-y-4">
+        <input type="password" id="login-pwd" placeholder="請輸入管理員密碼"
+          class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400"
+          onkeydown="if(event.key==='Enter') adminLogin()">
+        <div id="login-err" class="text-red-500 text-sm hidden"></div>
+        <button onclick="adminLogin()"
+          class="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition">登入</button>
+      </div>
+      <p class="text-xs text-gray-400 text-center mt-4">預設密碼：admin123（請登入後立即修改）</p>
+    </div>
+  </div>
+
+  <!-- Admin Dashboard -->
+  <div id="admin-screen" class="hidden">
+    <!-- Top Bar -->
+    <div class="bg-white border-b px-4 py-3 flex justify-between items-center sticky top-0 z-20 shadow-sm">
+      <h1 class="font-bold text-gray-800">🏸 管理後台</h1>
+      <button onclick="adminLogout()" class="text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg">登出</button>
+    </div>
+
+    <div class="max-w-2xl mx-auto p-4 space-y-4">
+      <!-- Tabs -->
+      <div class="flex bg-gray-200 rounded-2xl p-1 gap-1">
+        <button onclick="showTab('activity')" id="tab-activity"
+          class="flex-1 py-2 rounded-xl text-sm font-medium transition tab-active">當週活動</button>
+        <button onclick="showTab('settings')" id="tab-settings"
+          class="flex-1 py-2 rounded-xl text-sm font-medium transition text-gray-500">預設設定</button>
+        <button onclick="showTab('history')" id="tab-history"
+          class="flex-1 py-2 rounded-xl text-sm font-medium transition text-gray-500">歷史記錄</button>
+      </div>
+
+      <!-- Activity Tab -->
+      <div id="pane-activity">
+        <div id="activity-container">
+          <div class="text-center text-gray-400 py-10">載入中...</div>
+        </div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div id="pane-settings" class="hidden">
+        <div class="bg-white rounded-2xl shadow p-5 space-y-5">
+          <div>
+            <h2 class="font-bold text-gray-800 mb-1">預設設定</h2>
+            <p class="text-xs text-gray-400">這裡的設定會套用到之後新建立的活動，不影響已建立的活動。</p>
+          </div>
+
+          <!-- Tier 1 -->
+          <div class="border border-gray-100 rounded-xl p-4">
+            <h3 class="font-semibold text-gray-700 mb-3 text-sm">報名類型 1</h3>
+            <div class="space-y-2">
+              <div>
+                <label class="text-xs text-gray-500">名稱</label>
+                <input type="text" id="s-t1-name" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs text-gray-500">費用（NT$）</label>
+                  <input type="number" id="s-t1-price" min="0" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+                </div>
+                <div>
+                  <label class="text-xs text-gray-500">人數上限</label>
+                  <input type="number" id="s-t1-cap" min="0" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tier 2 -->
+          <div class="border border-gray-100 rounded-xl p-4">
+            <h3 class="font-semibold text-gray-700 mb-3 text-sm">報名類型 2</h3>
+            <div class="space-y-2">
+              <div>
+                <label class="text-xs text-gray-500">名稱</label>
+                <input type="text" id="s-t2-name" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs text-gray-500">費用（NT$）</label>
+                  <input type="number" id="s-t2-price" min="0" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+                </div>
+                <div>
+                  <label class="text-xs text-gray-500">人數上限</label>
+                  <input type="number" id="s-t2-cap" min="0" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Password -->
+          <div class="border border-gray-100 rounded-xl p-4">
+            <h3 class="font-semibold text-gray-700 mb-3 text-sm">更改管理員密碼</h3>
+            <input type="password" id="s-pwd" placeholder="輸入新密碼（留空表示不更改）"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+          </div>
+
+          <div id="settings-msg" class="text-sm hidden"></div>
+          <button onclick="saveSettings()"
+            class="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition">儲存設定</button>
+        </div>
+      </div>
+
+      <!-- History Tab -->
+      <div id="pane-history" class="hidden">
+        <div id="history-container">
+          <div class="text-center text-gray-400 py-10">載入中...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Tiers Modal -->
+  <div id="edit-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center px-4">
+    <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+      <h2 class="font-bold text-lg text-gray-800 mb-4">修改本次活動設定</h2>
+      <p class="text-xs text-gray-400 mb-4">僅影響本次活動，不影響預設設定。</p>
+      <div id="edit-form" class="space-y-3"></div>
+      <div id="edit-msg" class="text-sm mt-2 hidden"></div>
+      <div class="flex gap-3 mt-5">
+        <button onclick="closeEditModal()"
+          class="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-medium hover:bg-gray-50">取消</button>
+        <button onclick="saveEditModal()"
+          class="flex-1 bg-green-600 text-white py-3 rounded-xl text-sm font-bold hover:bg-green-700">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let adminActivityId = null;
+
+    // ==================== AUTH ====================
+    async function adminLogin() {
+      const pwd = document.getElementById('login-pwd').value;
+      const errEl = document.getElementById('login-err');
+      errEl.classList.add('hidden');
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pwd })
+        });
+        if (res.ok) {
+          document.getElementById('login-screen').classList.add('hidden');
+          document.getElementById('admin-screen').classList.remove('hidden');
+          loadAll();
+        } else {
+          const d = await res.json();
+          errEl.textContent = d.error || '登入失敗';
+          errEl.classList.remove('hidden');
+        }
+      } catch { errEl.textContent = '網路錯誤'; errEl.classList.remove('hidden'); }
+    }
+
+    async function adminLogout() {
+      await fetch('/api/admin/logout', { method: 'POST' });
+      document.getElementById('admin-screen').classList.add('hidden');
+      document.getElementById('login-screen').classList.remove('hidden');
+    }
+
+    // ==================== TABS ====================
+    function showTab(tab) {
+      ['activity', 'settings', 'history'].forEach(t => {
+        document.getElementById(`pane-${t}`).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tab) { btn.classList.add('tab-active'); btn.classList.remove('text-gray-500'); }
+        else { btn.classList.remove('tab-active'); btn.classList.add('text-gray-500'); }
+      });
+    }
+
+    // ==================== LOAD ====================
+    async function loadAll() {
+      loadActivity();
+      loadSettings();
+      loadHistory();
+    }
+
+    async function loadActivity() {
+      const container = document.getElementById('activity-container');
+      try {
+        const res = await fetch('/api/activity/current');
+        const data = await res.json();
+
+        if (!data.activity) {
+          container.innerHTML = `
+            <div class="bg-white rounded-2xl shadow p-6 text-center">
+              <p class="text-gray-400 mb-4">目前沒有活動</p>
+              <button onclick="createNextActivity()" class="bg-green-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium">建立下週活動</button>
+            </div>`;
+          return;
+        }
+
+        adminActivityId = data.activity.id;
+
+        // Fetch full details
+        const detailRes = await fetch(`/api/admin/activity/${data.activity.id}`);
+        const detail = (await detailRes.json()).activity;
+
+        renderActivity(data.activity, detail);
+      } catch (err) {
+        container.innerHTML = '<div class="text-red-500 text-center py-6">載入失敗</div>';
+      }
+    }
+
+    function renderActivity(activity, detail) {
+      const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+      const [y, m, d] = activity.activity_date.split('-').map(Number);
+      const date = new Date(y, m - 1, d);
+      const dateStr = `${y}/${m}/${d}（週${weekdays[date.getDay()]}）`;
+
+      const statusBadge = activity.is_open
+        ? '<span class="bg-green-100 text-green-700 text-xs px-2.5 py-1 rounded-full font-medium">報名開放中</span>'
+        : '<span class="bg-gray-100 text-gray-500 text-xs px-2.5 py-1 rounded-full font-medium">報名已截止</span>';
+
+      const tiersHtml = detail.tiers.map(tier => {
+        const confirmedHtml = tier.confirmed.length
+          ? tier.confirmed.map((r, i) => `
+              <div class="flex justify-between items-center bg-green-50 rounded-lg px-3 py-2 text-sm">
+                <span class="text-gray-700">${i + 1}. <span class="font-medium">${r.name}</span> <span class="text-gray-400 text-xs">${r.phone}</span></span>
+                <button onclick="cancelReg(${r.id})" class="text-red-400 hover:text-red-600 text-xs ml-2 shrink-0">取消</button>
+              </div>`).join('')
+          : '';
+
+        const waitlistHtml = tier.waitlist.length
+          ? tier.waitlist.map(r => `
+              <div class="flex justify-between items-center bg-orange-50 rounded-lg px-3 py-2 text-sm">
+                <span class="text-gray-700">候補${r.waitlist_position}. <span class="font-medium">${r.name}</span> <span class="text-gray-400 text-xs">${r.phone}</span></span>
+                <button onclick="cancelReg(${r.id})" class="text-red-400 hover:text-red-600 text-xs ml-2 shrink-0">取消</button>
+              </div>`).join('')
+          : '';
+
+        const emptyNote = (!tier.confirmed.length && !tier.waitlist.length)
+          ? '<div class="text-center text-gray-300 text-sm py-2">尚無人報名</div>' : '';
+
+        return `
+          <div class="border border-gray-100 rounded-xl p-4 mb-3">
+            <div class="flex justify-between items-center mb-3">
+              <div>
+                <span class="font-semibold text-gray-800">${tier.name}</span>
+                <span class="ml-2 text-green-600 font-bold text-sm">NT$ ${tier.price}</span>
+              </div>
+              <span class="text-sm text-gray-400">${tier.confirmed.length} / ${tier.capacity} 人</span>
+            </div>
+            ${tier.confirmed.length ? `<div class="text-xs text-gray-400 mb-1.5">確認報名（${tier.confirmed.length}）</div><div class="space-y-1.5 mb-3">${confirmedHtml}</div>` : ''}
+            ${tier.waitlist.length ? `<div class="text-xs text-gray-400 mb-1.5">候補名單（${tier.waitlist.length}）</div><div class="space-y-1.5">${waitlistHtml}</div>` : ''}
+            ${emptyNote}
+          </div>`;
+      }).join('');
+
+      document.getElementById('activity-container').innerHTML = `
+        <div class="bg-white rounded-2xl shadow p-5">
+          <div class="flex justify-between items-start mb-5">
+            <div>
+              <div class="font-bold text-xl text-gray-800 mb-1">${dateStr}</div>
+              <div class="text-gray-500 text-sm mb-2">${activity.start_time} – ${activity.end_time}</div>
+              ${statusBadge}
+            </div>
+            <button onclick="openEditModal()" class="border border-gray-200 text-gray-600 text-xs px-3 py-2 rounded-xl hover:bg-gray-50 shrink-0 ml-2">修改設定</button>
+          </div>
+          ${tiersHtml}
+        </div>`;
+    }
+
+    async function loadSettings() {
+      const res = await fetch('/api/admin/settings');
+      const s = await res.json();
+      document.getElementById('s-t1-name').value = s.tier1_name || '';
+      document.getElementById('s-t1-price').value = s.tier1_price || 0;
+      document.getElementById('s-t1-cap').value = s.tier1_capacity || 10;
+      document.getElementById('s-t2-name').value = s.tier2_name || '';
+      document.getElementById('s-t2-price').value = s.tier2_price || 0;
+      document.getElementById('s-t2-cap').value = s.tier2_capacity || 10;
+    }
+
+    async function saveSettings() {
+      const payload = {
+        tier1_name: document.getElementById('s-t1-name').value,
+        tier1_price: document.getElementById('s-t1-price').value,
+        tier1_capacity: document.getElementById('s-t1-cap').value,
+        tier2_name: document.getElementById('s-t2-name').value,
+        tier2_price: document.getElementById('s-t2-price').value,
+        tier2_capacity: document.getElementById('s-t2-cap').value,
+      };
+      const newPwd = document.getElementById('s-pwd').value;
+      if (newPwd) payload.admin_password = newPwd;
+
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      const msgEl = document.getElementById('settings-msg');
+      if (res.ok) {
+        msgEl.textContent = '✓ 設定已儲存';
+        msgEl.className = 'text-sm text-green-600';
+        document.getElementById('s-pwd').value = '';
+      } else {
+        msgEl.textContent = '儲存失敗，請稍後再試';
+        msgEl.className = 'text-sm text-red-500';
+      }
+      msgEl.classList.remove('hidden');
+      setTimeout(() => msgEl.classList.add('hidden'), 3000);
+    }
+
+    async function loadHistory() {
+      const res = await fetch('/api/admin/activities');
+      const data = await res.json();
+      const container = document.getElementById('history-container');
+
+      if (!data.activities || data.activities.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-400 py-10">暫無記錄</div>';
+        return;
+      }
+
+      const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+      const rows = data.activities.map(act => {
+        const [y, m, d] = act.activity_date.split('-').map(Number);
+        const date = new Date(y, m - 1, d);
+        const now = new Date();
+        const deadline = new Date(act.deadline);
+        const isOpen = now < deadline;
+        return `
+          <div class="bg-white rounded-xl shadow p-4 flex justify-between items-center">
+            <div>
+              <div class="font-medium text-gray-800">${y}/${m}/${d}（週${weekdays[date.getDay()]}）</div>
+              <div class="text-xs text-gray-400 mt-0.5">${act.start_time} – ${act.end_time}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs ${isOpen ? 'text-green-600' : 'text-gray-400'} mb-1">${isOpen ? '開放中' : '已截止'}</div>
+              <div class="text-sm text-gray-600 font-medium">${act.total_confirmed} 人報名</div>
+              ${act.total_waitlist > 0 ? `<div class="text-xs text-orange-400">${act.total_waitlist} 人候補</div>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+
+      container.innerHTML = `
+        <div class="space-y-3">
+          <div class="flex justify-between items-center px-1">
+            <span class="text-sm text-gray-500">共 ${data.activities.length} 筆活動</span>
+            <button onclick="createNextActivity()" class="bg-green-600 text-white px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-green-700">＋ 手動建立下週活動</button>
+          </div>
+          ${rows}
+        </div>`;
+    }
+
+    async function createNextActivity() {
+      const res = await fetch('/api/admin/activity', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+      });
+      if (res.ok) {
+        alert('活動建立成功！');
+        loadAll();
+      } else {
+        const d = await res.json();
+        alert(d.error || '建立失敗');
+      }
+    }
+
+    async function cancelReg(id) {
+      if (!confirm('確定取消此報名？\n\n若取消的是確認報名，候補第一位將自動升為確認。')) return;
+      const res = await fetch(`/api/admin/registration/${id}`, { method: 'DELETE' });
+      if (res.ok) { loadActivity(); }
+      else { alert('操作失敗，請稍後再試'); }
+    }
+
+    // ==================== EDIT MODAL ====================
+    async function openEditModal() {
+      if (!adminActivityId) return;
+      const res = await fetch(`/api/admin/activity/${adminActivityId}`);
+      const data = (await res.json()).activity;
+
+      const formHtml = data.tiers.map((tier, i) => `
+        <div class="border border-gray-100 rounded-xl p-4">
+          <div class="text-xs font-semibold text-gray-500 mb-2">類型 ${i + 1}</div>
+          <input type="hidden" id="e-id-${i}" value="${tier.id}">
+          <div class="space-y-2">
+            <div>
+              <label class="text-xs text-gray-400">名稱</label>
+              <input type="text" id="e-name-${i}" value="${tier.name}"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-gray-400">費用（NT$）</label>
+                <input type="number" id="e-price-${i}" value="${tier.price}" min="0"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+              </div>
+              <div>
+                <label class="text-xs text-gray-400">人數上限</label>
+                <input type="number" id="e-cap-${i}" value="${tier.capacity}" min="0"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400">
+              </div>
+            </div>
+          </div>
+        </div>`).join('');
+
+      document.getElementById('edit-form').innerHTML = formHtml;
+      document.getElementById('edit-form').dataset.count = data.tiers.length;
+      document.getElementById('edit-msg').classList.add('hidden');
+      document.getElementById('edit-modal').classList.remove('hidden');
+    }
+
+    function closeEditModal() {
+      document.getElementById('edit-modal').classList.add('hidden');
+    }
+
+    async function saveEditModal() {
+      const count = parseInt(document.getElementById('edit-form').dataset.count);
+      const tiers = [];
+      for (let i = 0; i < count; i++) {
+        tiers.push({
+          id: document.getElementById(`e-id-${i}`).value,
+          name: document.getElementById(`e-name-${i}`).value,
+          price: document.getElementById(`e-price-${i}`).value,
+          capacity: document.getElementById(`e-cap-${i}`).value,
+        });
+      }
+
+      const res = await fetch(`/api/admin/activity/${adminActivityId}/tiers`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tiers })
+      });
+
+      if (res.ok) {
+        closeEditModal();
+        loadActivity();
+      } else {
+        const msgEl = document.getElementById('edit-msg');
+        msgEl.textContent = '儲存失敗，請稍後再試';
+        msgEl.className = 'text-sm text-red-500';
+        msgEl.classList.remove('hidden');
+      }
+    }
+
+    // ==================== INIT ====================
+    fetch('/api/admin/check').then(r => r.json()).then(d => {
+      if (d.isAdmin) {
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('admin-screen').classList.remove('hidden');
+        loadAll();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+node_modules/
+badminton.db
+badminton.db-shm
+badminton.db-wal
+.env
