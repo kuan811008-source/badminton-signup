@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: badminton-signup
+    runtime: node
+    buildCommand: npm install
+    startCommand: TZ=Asia/Taipei node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
