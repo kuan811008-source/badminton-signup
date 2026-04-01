@@ -68,13 +68,33 @@ function getSettings() {
   return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 
-// Returns YYYY-MM-DD of the next Wednesday (or 7 days later if today is Wednesday)
+function formatDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// 給 cron job 用：永遠返回 7 天後的週三
 function getNextWednesdayDate(fromDate = new Date()) {
   const d = new Date(fromDate);
-  const day = d.getDay(); // 0=Sun ... 3=Wed
-  const daysUntil = day === 3 ? 7 : (3 - day + 7) % 7;
-  d.setDate(d.getDate() + daysUntil);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 3 ? 7 : (3 - day + 7) % 7));
+  return formatDateStr(d);
+}
+
+// 給初始化 / 管理員建立用：
+// 若今天是週三且還沒過截止時間(18:00) → 返回今天
+// 否則 → 返回下個週三
+function getUpcomingWednesdayDate(fromDate = new Date()) {
+  const d = new Date(fromDate);
+  const day = d.getDay();
+  if (day === 3) {
+    const todayStr = formatDateStr(d);
+    const deadline = new Date(`${todayStr} 18:00:00`);
+    if (d < deadline) return todayStr;
+    d.setDate(d.getDate() + 7);
+    return formatDateStr(d);
+  }
+  d.setDate(d.getDate() + (3 - day + 7) % 7);
+  return formatDateStr(d);
 }
 
 function createActivity(dateStr) {
@@ -99,9 +119,10 @@ function createActivity(dateStr) {
   return actId;
 }
 
-// 建立初始活動（首次啟動）
-if (db.prepare('SELECT COUNT(*) as c FROM activities').get().c === 0) {
-  createActivity(getNextWednesdayDate());
+// 確保本週/當前活動存在（每次啟動都檢查）
+const upcomingDate = getUpcomingWednesdayDate();
+if (!db.prepare('SELECT id FROM activities WHERE activity_date = ?').get(upcomingDate)) {
+  createActivity(upcomingDate);
 }
 
 // ==================== SCHEDULER ====================
@@ -287,7 +308,7 @@ app.put('/api/admin/activity/:id/tiers', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/activity', requireAdmin, (req, res) => {
-  const dateStr = req.body.date || getNextWednesdayDate();
+  const dateStr = req.body.date || getUpcomingWednesdayDate();
   const id = createActivity(dateStr);
   res.json({ success: true, id });
 });
