@@ -226,6 +226,46 @@ app.get('/api/registration', async (req, res) => {
   }
 });
 
+// 公開取消報名（需驗證電話）
+app.delete('/api/register/:id', async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: '請提供電話號碼以驗證身份' });
+
+    const cleanPhone = phone.replace(/[\s\-]/g, '');
+    const reg = one(await db.execute({ sql: 'SELECT * FROM registrations WHERE id = ?', args: [req.params.id] }));
+    if (!reg) return res.status(404).json({ error: '找不到報名記錄' });
+    if (reg.phone !== cleanPhone) return res.status(403).json({ error: '電話號碼不符，無法取消' });
+
+    // 確認取消截止時間：活動當週三 12:00
+    const activity = one(await db.execute({ sql: 'SELECT * FROM activities WHERE id = ?', args: [reg.activity_id] }));
+    if (!activity) return res.status(404).json({ error: '找不到活動' });
+
+    const cancelDeadline = new Date(`${activity.activity_date} 12:00:00`);
+    if (new Date() >= cancelDeadline) {
+      return res.status(400).json({ error: '已超過取消截止時間（週三中午 12:00），如需取消請聯繫管理員' });
+    }
+
+    // 執行取消
+    await db.execute({ sql: 'DELETE FROM registrations WHERE id = ?', args: [reg.id] });
+
+    if (reg.status === 'confirmed') {
+      const first = one(await db.execute({ sql: "SELECT * FROM registrations WHERE tier_id = ? AND status = 'waitlist' ORDER BY waitlist_position ASC LIMIT 1", args: [reg.tier_id] }));
+      if (first) {
+        await db.execute({ sql: "UPDATE registrations SET status = 'confirmed', waitlist_position = NULL WHERE id = ?", args: [first.id] });
+        await db.execute({ sql: "UPDATE registrations SET waitlist_position = waitlist_position - 1 WHERE tier_id = ? AND status = 'waitlist'", args: [reg.tier_id] });
+      }
+    } else if (reg.status === 'waitlist') {
+      await db.execute({ sql: "UPDATE registrations SET waitlist_position = waitlist_position - 1 WHERE tier_id = ? AND status = 'waitlist' AND waitlist_position > ?", args: [reg.tier_id, reg.waitlist_position] });
+    }
+
+    res.json({ success: true, message: '已成功取消報名' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: '伺服器錯誤' });
+  }
+});
+
 // ==================== ADMIN API ====================
 function requireAdmin(req, res, next) {
   if (!req.session.isAdmin) return res.status(401).json({ error: '請先登入' });

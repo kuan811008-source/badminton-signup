@@ -273,6 +273,8 @@
       document.getElementById('success-modal').classList.add('hidden');
     }
 
+    let lastCheckedPhone = '';
+
     async function checkRegistration() {
       const phone = document.getElementById('check-phone').value.trim();
       const resultEl = document.getElementById('check-result');
@@ -283,6 +285,7 @@
         return;
       }
 
+      lastCheckedPhone = phone;
       resultEl.innerHTML = '<p class="text-gray-400 text-sm">查詢中...</p>';
 
       try {
@@ -294,17 +297,40 @@
           return;
         }
 
-        const html = data.registrations.slice(0, 3).map(reg => {
+        const html = data.registrations.slice(0, 5).map(reg => {
           const [y, m, d] = reg.activity_date.split('-').map(Number);
           const dateStr = `${y}/${m}/${d}`;
+
           const statusHtml = reg.status === 'confirmed'
             ? '<span class="text-green-600 font-bold">✓ 確認報名</span>'
             : `<span class="text-orange-500 font-bold">⏳ 候補第 ${reg.waitlist_position} 位</span>`;
+
+          // 判斷是否可以取消（週三中午12:00前）
+          const cancelDeadline = new Date(`${reg.activity_date} 12:00:00`);
+          const now = new Date();
+          const canCancel = now < cancelDeadline;
+          const activityPast = now >= new Date(`${reg.activity_date} 22:00:00`);
+
+          let cancelBtn = '';
+          if (activityPast) {
+            cancelBtn = ''; // 活動已結束，不顯示
+          } else if (canCancel) {
+            cancelBtn = `<button onclick="cancelRegistration(${reg.id}, '${dateStr}')"
+              class="mt-2 w-full border border-red-300 text-red-500 py-1.5 rounded-lg text-xs font-medium hover:bg-red-50 transition">
+              取消報名
+            </button>`;
+          } else {
+            cancelBtn = `<div class="mt-2 text-center text-xs text-gray-400 bg-gray-50 rounded-lg py-1.5">
+              🔒 取消截止（週三 12:00）已過
+            </div>`;
+          }
+
           return `
             <div class="bg-gray-50 rounded-xl p-3 text-sm">
               <div class="font-medium text-gray-700 mb-1">${dateStr} 活動</div>
               <div class="text-gray-500">類型：${reg.tier_name}（NT$ ${reg.price}）</div>
               <div class="mt-1">狀態：${statusHtml}</div>
+              ${cancelBtn}
             </div>
           `;
         }).join('');
@@ -313,6 +339,29 @@
 
       } catch (err) {
         resultEl.innerHTML = '<p class="text-red-500 text-sm">查詢失敗，請稍後再試</p>';
+      }
+    }
+
+    async function cancelRegistration(regId, dateStr) {
+      if (!confirm(`確定要取消 ${dateStr} 的報名嗎？\n取消後若有候補者會自動遞補，無法復原。`)) return;
+
+      try {
+        const res = await fetch(`/api/register/${regId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: lastCheckedPhone })
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          showSuccess('✅', '取消成功', '你的報名已取消。');
+          checkRegistration(); // 重新整理查詢結果
+          loadActivity();      // 更新名額顯示
+        } else {
+          alert(data.error || '取消失敗，請稍後再試');
+        }
+      } catch (err) {
+        alert('網路錯誤，請稍後再試');
       }
     }
 
