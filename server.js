@@ -45,12 +45,24 @@ async function initDB() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      leave_code TEXT NOT NULL UNIQUE,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS leave_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL,
+      activity_id INTEGER NOT NULL,
+      used_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(member_id, activity_id)
+    );
   `);
 
-  // 為舊有資料庫補上 leave_slots 欄位（若不存在）
-  try {
-    await db.execute('ALTER TABLE tiers ADD COLUMN leave_slots INTEGER NOT NULL DEFAULT 0');
-  } catch (e) { /* 欄位已存在，忽略 */ }
+  // 為舊有資料庫補上欄位（若不存在）
+  try { await db.execute('ALTER TABLE tiers ADD COLUMN leave_slots INTEGER NOT NULL DEFAULT 0'); } catch (e) {}
 
   const defaults = [
     ['admin_password', 'admin123'],
@@ -60,7 +72,6 @@ async function initDB() {
     ['tier2_name', '一般散打'],
     ['tier2_price', '0'],
     ['tier2_capacity', '10'],
-    ['leave_password', ''],  // 請假密碼（空字串=未啟用）
   ];
   for (const [k, v] of defaults) {
     await db.execute({ sql: 'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', args: [k, v] });
@@ -235,36 +246,78 @@ app.get('/api/registration', async (req, res) => {
   }
 });
 
-// 季繳會員請假解鎖（新增非常態名額）
+// 季繳會員請假解鎖
 app.post('/api/leave-unlock', async (req, res) => {
   try {
-    const { activity_id, password } = req.body;
-    if (!activity_id || !password) return res.status(400).json({ error: '資料不完整' });
+    const { activity_id, leave_code } = req.body;
+    if (!activity_id || !leave_code) return res.status(400).json({ error: '資料不完整' });
 
-    const leavePassword = await getSetting('leave_password');
-    if (!leavePassword) return res.status(400).json({ error: '請假功能尚未啟用，請聯繫管理員設定密碼' });
-    if (password !== leavePassword) return res.status(403).json({ error: '密碼錯誤' });
+    // 驗證會員代碼
+    const member = one(await db.execute({ sql: 'SELECT * FROM members WHERE leave_code = ? AND active = 1', args: [leave_code.trim()] }));
+    if (!member) return res.status(403).json({ error: '代碼錯誤或會員資格無效' });
 
     // 確認活動存在且報名中
     const activity = one(await db.execute({ sql: 'SELECT * FROM activities WHERE id = ?', args: [activity_id] }));
     if (!activity) return res.status(404).json({ error: '活動不存在' });
     if (new Date() >= new Date(activity.deadline)) return res.status(400).json({ error: '報名已截止，無法新增請假名額' });
 
+    // 確認此會員本次活動尚未請假
+    const alreadyUsed = one(await db.execute({ sql: 'SELECT id FROM leave_logs WHERE member_id = ? AND activity_id = ?', args: [member.id, activity_id] }));
+    if (alreadyUsed) return res.status(400).json({ error: `${member.name} 本次活動已請假過，每次活動限請假一次` });
+
     // 取得第一個 tier（補季繳請假）
-    const tiers = rows(await db.execute({ sql: 'SELECT * FROM tiers WHERE activity_id = ? ORDER BY id ASC LIMIT 1', args: [activity_id] }));
-    if (!tiers.length) return res.status(404).json({ error: '找不到報名類型' });
-    const tier = tiers[0];
+    const tier = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE activity_id = ? ORDER BY id ASC LIMIT 1', args: [activity_id] }));
+    if (!tier) return res.status(404).json({ error: '找不到報名類型' });
 
-    // +1 請假名額
+    // +1 請假名額 + 記錄 log
     await db.execute({ sql: 'UPDATE tiers SET leave_slots = leave_slots + 1 WHERE id = ?', args: [tier.id] });
-    const updated = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE id = ?', args: [tier.id] }));
+    await db.execute({ sql: 'INSERT INTO leave_logs (member_id, activity_id) VALUES (?, ?)', args: [member.id, activity_id] });
 
-    console.log(`[請假] 活動 ${activity_id}，${tier.name} 新增請假名額，目前 leave_slots=${updated.leave_slots}`);
-    res.json({ success: true, leave_slots: updated.leave_slots, tier_name: tier.name, message: `已成功請假，${tier.name} 增加 1 個名額` });
+    const updated = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE id = ?', args: [tier.id] }));
+    console.log(`[請假] ${member.name} 請假，活動 ${activity_id}，${tier.name} leave_slots=${updated.leave_slots}`);
+    res.json({ success: true, member_name: member.name, leave_slots: updated.leave_slots, tier_name: tier.name, message: `${member.name} 請假成功，「${tier.name}」增加 1 個名額` });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: '伺服器錯誤' });
   }
+});
+
+// ==================== 會員管理 API ====================
+app.get('/api/admin/members', requireAdmin, async (req, res) => {
+  try {
+    const memberList = rows(await db.execute('SELECT * FROM members ORDER BY id ASC'));
+    res.json({ members: memberList });
+  } catch (err) { res.status(500).json({ error: '伺服器錯誤' }); }
+});
+
+app.post('/api/admin/members', requireAdmin, async (req, res) => {
+  try {
+    const { name, leave_code } = req.body;
+    if (!name || !leave_code) return res.status(400).json({ error: '姓名和代碼為必填' });
+    const dup = one(await db.execute({ sql: 'SELECT id FROM members WHERE leave_code = ?', args: [leave_code.trim()] }));
+    if (dup) return res.status(400).json({ error: '此代碼已被使用，請換一個' });
+    const result = await db.execute({ sql: 'INSERT INTO members (name, leave_code) VALUES (?, ?)', args: [name.trim(), leave_code.trim()] });
+    res.json({ success: true, id: Number(result.lastInsertRowid) });
+  } catch (err) { res.status(500).json({ error: '伺服器錯誤' }); }
+});
+
+app.put('/api/admin/members/:id', requireAdmin, async (req, res) => {
+  try {
+    const { name, leave_code, active } = req.body;
+    if (leave_code) {
+      const dup = one(await db.execute({ sql: 'SELECT id FROM members WHERE leave_code = ? AND id != ?', args: [leave_code.trim(), req.params.id] }));
+      if (dup) return res.status(400).json({ error: '此代碼已被使用' });
+    }
+    await db.execute({ sql: 'UPDATE members SET name = COALESCE(?, name), leave_code = COALESCE(?, leave_code), active = COALESCE(?, active) WHERE id = ?', args: [name || null, leave_code?.trim() || null, active ?? null, req.params.id] });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: '伺服器錯誤' }); }
+});
+
+app.delete('/api/admin/members/:id', requireAdmin, async (req, res) => {
+  try {
+    await db.execute({ sql: 'DELETE FROM members WHERE id = ?', args: [req.params.id] });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: '伺服器錯誤' }); }
 });
 
 // 公開取消報名（需驗證電話）
@@ -333,7 +386,7 @@ app.get('/api/admin/settings', requireAdmin, async (req, res) => {
 
 app.put('/api/admin/settings', requireAdmin, async (req, res) => {
   try {
-    const allowed = ['admin_password', 'tier1_name', 'tier1_price', 'tier1_capacity', 'tier2_name', 'tier2_price', 'tier2_capacity', 'leave_password'];
+    const allowed = ['admin_password', 'tier1_name', 'tier1_price', 'tier1_capacity', 'tier2_name', 'tier2_price', 'tier2_capacity'];
     for (const [key, value] of Object.entries(req.body)) {
       if (allowed.includes(key) && value !== '') await db.execute({ sql: 'UPDATE settings SET value = ? WHERE key = ?', args: [String(value), key] });
     }

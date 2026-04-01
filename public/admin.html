@@ -42,17 +42,31 @@
       <!-- Tabs -->
       <div class="flex bg-gray-200 rounded-2xl p-1 gap-1">
         <button onclick="showTab('activity')" id="tab-activity"
-          class="flex-1 py-2 rounded-xl text-sm font-medium transition tab-active">當週活動</button>
+          class="flex-1 py-2 rounded-xl text-xs font-medium transition tab-active">當週活動</button>
+        <button onclick="showTab('members')" id="tab-members"
+          class="flex-1 py-2 rounded-xl text-xs font-medium transition text-gray-500">季繳會員</button>
         <button onclick="showTab('settings')" id="tab-settings"
-          class="flex-1 py-2 rounded-xl text-sm font-medium transition text-gray-500">預設設定</button>
+          class="flex-1 py-2 rounded-xl text-xs font-medium transition text-gray-500">預設設定</button>
         <button onclick="showTab('history')" id="tab-history"
-          class="flex-1 py-2 rounded-xl text-sm font-medium transition text-gray-500">歷史記錄</button>
+          class="flex-1 py-2 rounded-xl text-xs font-medium transition text-gray-500">歷史記錄</button>
       </div>
 
       <!-- Activity Tab -->
       <div id="pane-activity">
         <div id="activity-container">
           <div class="text-center text-gray-400 py-10">載入中...</div>
+        </div>
+      </div>
+
+      <!-- Members Tab -->
+      <div id="pane-members" class="hidden">
+        <div class="bg-white rounded-2xl shadow p-5">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="font-bold text-gray-800">季繳會員名單</h2>
+            <button onclick="openAddMember()" class="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-blue-700">＋ 新增會員</button>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">每位會員有專屬請假代碼，每次活動只能請假一次。</p>
+          <div id="members-list"><div class="text-center text-gray-400 py-6">載入中...</div></div>
         </div>
       </div>
 
@@ -106,14 +120,6 @@
             </div>
           </div>
 
-          <!-- Leave Password -->
-          <div class="border border-blue-100 rounded-xl p-4 bg-blue-50/30">
-            <h3 class="font-semibold text-gray-700 mb-1 text-sm">🏃 季繳請假密碼</h3>
-            <p class="text-xs text-gray-400 mb-2">會員輸入此密碼即可請假並新增 1 個補位名額。留空表示關閉此功能。</p>
-            <input type="text" id="s-leave-pwd" placeholder="設定請假密碼（留空=關閉）"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
-          </div>
-
           <!-- Password -->
           <div class="border border-gray-100 rounded-xl p-4">
             <h3 class="font-semibold text-gray-700 mb-3 text-sm">更改管理員密碼</h3>
@@ -132,6 +138,31 @@
         <div id="history-container">
           <div class="text-center text-gray-400 py-10">載入中...</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Member Modal -->
+  <div id="member-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center px-4">
+    <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+      <h2 id="member-modal-title" class="font-bold text-lg text-gray-800 mb-4">新增季繳會員</h2>
+      <input type="hidden" id="member-edit-id">
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-500">姓名</label>
+          <input type="text" id="member-name" placeholder="例：王小明"
+            class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">個人請假代碼（自訂，會員輸入此代碼請假）</label>
+          <input type="text" id="member-code" placeholder="例：wang0912 或任意代碼"
+            class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+      </div>
+      <div id="member-modal-err" class="text-red-500 text-sm mt-2 hidden"></div>
+      <div class="flex gap-3 mt-5">
+        <button onclick="closeMemberModal()" class="flex-1 border border-gray-200 text-gray-600 py-3 rounded-xl text-sm">取消</button>
+        <button onclick="saveMember()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl text-sm font-bold hover:bg-blue-700">儲存</button>
       </div>
     </div>
   </div>
@@ -185,12 +216,13 @@
 
     // ==================== TABS ====================
     function showTab(tab) {
-      ['activity', 'settings', 'history'].forEach(t => {
+      ['activity', 'members', 'settings', 'history'].forEach(t => {
         document.getElementById(`pane-${t}`).classList.toggle('hidden', t !== tab);
         const btn = document.getElementById(`tab-${t}`);
         if (t === tab) { btn.classList.add('tab-active'); btn.classList.remove('text-gray-500'); }
         else { btn.classList.remove('tab-active'); btn.classList.add('text-gray-500'); }
       });
+      if (tab === 'members') loadMembers();
     }
 
     // ==================== LOAD ====================
@@ -295,7 +327,6 @@
       document.getElementById('s-t2-name').value = s.tier2_name || '';
       document.getElementById('s-t2-price').value = s.tier2_price || 0;
       document.getElementById('s-t2-cap').value = s.tier2_capacity || 10;
-      document.getElementById('s-leave-pwd').value = s.leave_password || '';
     }
 
     async function saveSettings() {
@@ -307,7 +338,6 @@
         tier2_price: document.getElementById('s-t2-price').value,
         tier2_capacity: document.getElementById('s-t2-cap').value,
       };
-      payload.leave_password = document.getElementById('s-leave-pwd').value;
       const newPwd = document.getElementById('s-pwd').value;
       if (newPwd) payload.admin_password = newPwd;
 
@@ -454,6 +484,73 @@
         msgEl.className = 'text-sm text-red-500';
         msgEl.classList.remove('hidden');
       }
+    }
+
+    // ==================== 會員管理 ====================
+    async function loadMembers() {
+      const res = await fetch('/api/admin/members');
+      const data = await res.json();
+      const container = document.getElementById('members-list');
+      if (!data.members || data.members.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-400 py-6">尚無季繳會員，點右上角新增</div>';
+        return;
+      }
+      container.innerHTML = data.members.map(m => `
+        <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+          <div>
+            <div class="font-medium text-gray-800 text-sm">${m.name}</div>
+            <div class="text-xs text-gray-400 mt-0.5">代碼：<span class="font-mono text-blue-600">${m.leave_code}</span></div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs px-2 py-0.5 rounded-full ${m.active ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}">${m.active ? '啟用' : '停用'}</span>
+            <button onclick="openEditMember(${m.id},'${m.name}','${m.leave_code}',${m.active})" class="text-xs text-gray-500 border border-gray-200 px-2 py-1 rounded-lg hover:bg-gray-50">編輯</button>
+            <button onclick="deleteMember(${m.id},'${m.name}')" class="text-xs text-red-400 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-50">刪除</button>
+          </div>
+        </div>`).join('');
+    }
+
+    function openAddMember() {
+      document.getElementById('member-modal-title').textContent = '新增季繳會員';
+      document.getElementById('member-edit-id').value = '';
+      document.getElementById('member-name').value = '';
+      document.getElementById('member-code').value = '';
+      document.getElementById('member-modal-err').classList.add('hidden');
+      document.getElementById('member-modal').classList.remove('hidden');
+    }
+
+    function openEditMember(id, name, code, active) {
+      document.getElementById('member-modal-title').textContent = '編輯季繳會員';
+      document.getElementById('member-edit-id').value = id;
+      document.getElementById('member-name').value = name;
+      document.getElementById('member-code').value = code;
+      document.getElementById('member-modal-err').classList.add('hidden');
+      document.getElementById('member-modal').classList.remove('hidden');
+    }
+
+    function closeMemberModal() {
+      document.getElementById('member-modal').classList.add('hidden');
+    }
+
+    async function saveMember() {
+      const id = document.getElementById('member-edit-id').value;
+      const name = document.getElementById('member-name').value.trim();
+      const leave_code = document.getElementById('member-code').value.trim();
+      const errEl = document.getElementById('member-modal-err');
+      if (!name || !leave_code) { errEl.textContent = '姓名和代碼為必填'; errEl.classList.remove('hidden'); return; }
+
+      const url = id ? `/api/admin/members/${id}` : '/api/admin/members';
+      const method = id ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, leave_code }) });
+      const data = await res.json();
+      if (res.ok) { closeMemberModal(); loadMembers(); }
+      else { errEl.textContent = data.error || '儲存失敗'; errEl.classList.remove('hidden'); }
+    }
+
+    async function deleteMember(id, name) {
+      if (!confirm(`確定要刪除「${name}」嗎？`)) return;
+      const res = await fetch(`/api/admin/members/${id}`, { method: 'DELETE' });
+      if (res.ok) loadMembers();
+      else alert('刪除失敗');
     }
 
     // ==================== INIT ====================
