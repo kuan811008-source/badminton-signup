@@ -28,7 +28,8 @@ async function initDB() {
       activity_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       price INTEGER NOT NULL DEFAULT 0,
-      capacity INTEGER NOT NULL DEFAULT 10
+      capacity INTEGER NOT NULL DEFAULT 10,
+      leave_slots INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS registrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,6 +47,11 @@ async function initDB() {
     );
   `);
 
+  // 為舊有資料庫補上 leave_slots 欄位（若不存在）
+  try {
+    await db.execute('ALTER TABLE tiers ADD COLUMN leave_slots INTEGER NOT NULL DEFAULT 0');
+  } catch (e) { /* 欄位已存在，忽略 */ }
+
   const defaults = [
     ['admin_password', 'admin123'],
     ['tier1_name', '補季繳請假'],
@@ -54,6 +60,7 @@ async function initDB() {
     ['tier2_name', '一般散打'],
     ['tier2_price', '0'],
     ['tier2_capacity', '10'],
+    ['leave_password', ''],  // 請假密碼（空字串=未啟用）
   ];
   for (const [k, v] of defaults) {
     await db.execute({ sql: 'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', args: [k, v] });
@@ -158,7 +165,8 @@ app.get('/api/activity/current', async (req, res) => {
     const tiersWithCounts = await Promise.all(tierList.map(async tier => {
       const confirmed = Number(one(await db.execute({ sql: "SELECT COUNT(*) as c FROM registrations WHERE tier_id = ? AND status = 'confirmed'", args: [tier.id] })).c);
       const waitlist = Number(one(await db.execute({ sql: "SELECT COUNT(*) as c FROM registrations WHERE tier_id = ? AND status = 'waitlist'", args: [tier.id] })).c);
-      return { ...tier, confirmed_count: confirmed, waitlist_count: waitlist, available: Math.max(0, tier.capacity - confirmed) };
+      const effectiveCapacity = tier.capacity + (tier.leave_slots || 0);
+      return { ...tier, confirmed_count: confirmed, waitlist_count: waitlist, available: Math.max(0, effectiveCapacity - confirmed), effective_capacity: effectiveCapacity };
     }));
 
     res.json({ activity: { ...activity, is_open: isOpen, tiers: tiersWithCounts } });
@@ -188,8 +196,9 @@ app.post('/api/register', async (req, res) => {
     if (dup) return res.status(400).json({ error: '此電話號碼已報名此次活動' });
 
     const confirmedCount = Number(one(await db.execute({ sql: "SELECT COUNT(*) as c FROM registrations WHERE tier_id = ? AND status = 'confirmed'", args: [tier_id] })).c);
+    const effectiveCapacity = tier.capacity + (tier.leave_slots || 0);
 
-    if (confirmedCount < tier.capacity) {
+    if (confirmedCount < effectiveCapacity) {
       await db.execute({ sql: 'INSERT INTO registrations (activity_id, tier_id, name, phone, status) VALUES (?, ?, ?, ?, ?)', args: [activity_id, tier_id, name.trim(), cleanPhone, 'confirmed'] });
       res.json({ success: true, status: 'confirmed', message: '報名成功！' });
     } else {
@@ -222,6 +231,38 @@ app.get('/api/registration', async (req, res) => {
     });
     res.json({ registrations: rows(result) });
   } catch (err) {
+    res.status(500).json({ error: '伺服器錯誤' });
+  }
+});
+
+// 季繳會員請假解鎖（新增非常態名額）
+app.post('/api/leave-unlock', async (req, res) => {
+  try {
+    const { activity_id, password } = req.body;
+    if (!activity_id || !password) return res.status(400).json({ error: '資料不完整' });
+
+    const leavePassword = await getSetting('leave_password');
+    if (!leavePassword) return res.status(400).json({ error: '請假功能尚未啟用，請聯繫管理員設定密碼' });
+    if (password !== leavePassword) return res.status(403).json({ error: '密碼錯誤' });
+
+    // 確認活動存在且報名中
+    const activity = one(await db.execute({ sql: 'SELECT * FROM activities WHERE id = ?', args: [activity_id] }));
+    if (!activity) return res.status(404).json({ error: '活動不存在' });
+    if (new Date() >= new Date(activity.deadline)) return res.status(400).json({ error: '報名已截止，無法新增請假名額' });
+
+    // 取得第一個 tier（補季繳請假）
+    const tiers = rows(await db.execute({ sql: 'SELECT * FROM tiers WHERE activity_id = ? ORDER BY id ASC LIMIT 1', args: [activity_id] }));
+    if (!tiers.length) return res.status(404).json({ error: '找不到報名類型' });
+    const tier = tiers[0];
+
+    // +1 請假名額
+    await db.execute({ sql: 'UPDATE tiers SET leave_slots = leave_slots + 1 WHERE id = ?', args: [tier.id] });
+    const updated = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE id = ?', args: [tier.id] }));
+
+    console.log(`[請假] 活動 ${activity_id}，${tier.name} 新增請假名額，目前 leave_slots=${updated.leave_slots}`);
+    res.json({ success: true, leave_slots: updated.leave_slots, tier_name: tier.name, message: `已成功請假，${tier.name} 增加 1 個名額` });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: '伺服器錯誤' });
   }
 });
@@ -292,7 +333,7 @@ app.get('/api/admin/settings', requireAdmin, async (req, res) => {
 
 app.put('/api/admin/settings', requireAdmin, async (req, res) => {
   try {
-    const allowed = ['admin_password', 'tier1_name', 'tier1_price', 'tier1_capacity', 'tier2_name', 'tier2_price', 'tier2_capacity'];
+    const allowed = ['admin_password', 'tier1_name', 'tier1_price', 'tier1_capacity', 'tier2_name', 'tier2_price', 'tier2_capacity', 'leave_password'];
     for (const [key, value] of Object.entries(req.body)) {
       if (allowed.includes(key) && value !== '') await db.execute({ sql: 'UPDATE settings SET value = ? WHERE key = ?', args: [String(value), key] });
     }

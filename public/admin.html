@@ -106,6 +106,14 @@
             </div>
           </div>
 
+          <!-- Leave Password -->
+          <div class="border border-blue-100 rounded-xl p-4 bg-blue-50/30">
+            <h3 class="font-semibold text-gray-700 mb-1 text-sm">🏃 季繳請假密碼</h3>
+            <p class="text-xs text-gray-400 mb-2">會員輸入此密碼即可請假並新增 1 個補位名額。留空表示關閉此功能。</p>
+            <input type="text" id="s-leave-pwd" placeholder="設定請假密碼（留空=關閉）"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+          </div>
+
           <!-- Password -->
           <div class="border border-gray-100 rounded-xl p-4">
             <h3 class="font-semibold text-gray-700 mb-3 text-sm">更改管理員密碼</h3>
@@ -287,6 +295,7 @@
       document.getElementById('s-t2-name').value = s.tier2_name || '';
       document.getElementById('s-t2-price').value = s.tier2_price || 0;
       document.getElementById('s-t2-cap').value = s.tier2_capacity || 10;
+      document.getElementById('s-leave-pwd').value = s.leave_password || '';
     }
 
     async function saveSettings() {
@@ -298,6 +307,7 @@
         tier2_price: document.getElementById('s-t2-price').value,
         tier2_capacity: document.getElementById('s-t2-cap').value,
       };
+      payload.leave_password = document.getElementById('s-leave-pwd').value;
       const newPwd = document.getElementById('s-pwd').value;
       if (newPwd) payload.admin_password = newPwd;
 
