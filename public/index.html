@@ -167,7 +167,7 @@
         container.innerHTML = '';
         container.classList.remove('hidden');
 
-        data.activity.tiers.forEach(tier => {
+        data.activity.tiers.filter(t => !t.hidden).forEach(tier => {
           const isFull = tier.available === 0;
           const card = document.createElement('div');
           card.className = 'bg-white rounded-2xl shadow p-5';
@@ -421,6 +421,8 @@
     }
 
     loadActivity();
+    // 每30秒自動更新名額顯示
+    setInterval(loadActivity, 30000);
   </script>
 </body>
 </html>

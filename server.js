@@ -63,6 +63,9 @@ async function initDB() {
 
   // 為舊有資料庫補上欄位（若不存在）
   try { await db.execute('ALTER TABLE tiers ADD COLUMN leave_slots INTEGER NOT NULL DEFAULT 0'); } catch (e) {}
+  try { await db.execute('ALTER TABLE tiers ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0'); } catch (e) {}
+  // 確保每個活動的第一個 tier（補季繳請假）標記為不對外公開
+  await db.execute('UPDATE tiers SET hidden = 1 WHERE id IN (SELECT MIN(id) FROM tiers GROUP BY activity_id)');
 
   const defaults = [
     ['admin_password', 'admin123'],
@@ -145,8 +148,8 @@ async function createActivity(dateStr) {
   });
 
   const actId = Number(result.lastInsertRowid);
-  await db.execute({ sql: 'INSERT INTO tiers (activity_id, name, price, capacity) VALUES (?, ?, ?, ?)', args: [actId, settings.tier1_name, parseInt(settings.tier1_price) || 0, parseInt(settings.tier1_capacity) || 10] });
-  await db.execute({ sql: 'INSERT INTO tiers (activity_id, name, price, capacity) VALUES (?, ?, ?, ?)', args: [actId, settings.tier2_name, parseInt(settings.tier2_price) || 0, parseInt(settings.tier2_capacity) || 10] });
+  await db.execute({ sql: 'INSERT INTO tiers (activity_id, name, price, capacity, hidden) VALUES (?, ?, ?, ?, 1)', args: [actId, settings.tier1_name, parseInt(settings.tier1_price) || 0, parseInt(settings.tier1_capacity) || 10] });
+  await db.execute({ sql: 'INSERT INTO tiers (activity_id, name, price, capacity, hidden) VALUES (?, ?, ?, ?, 0)', args: [actId, settings.tier2_name, parseInt(settings.tier2_price) || 0, parseInt(settings.tier2_capacity) || 10] });
   console.log(`[系統] 建立活動：${dateStr}`);
   return actId;
 }
@@ -202,6 +205,7 @@ app.post('/api/register', async (req, res) => {
 
     const tier = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE id = ? AND activity_id = ?', args: [tier_id, activity_id] }));
     if (!tier) return res.status(404).json({ error: '報名類型不存在' });
+    if (tier.hidden) return res.status(403).json({ error: '此報名類型不開放直接報名' });
 
     const dup = one(await db.execute({ sql: 'SELECT id FROM registrations WHERE activity_id = ? AND phone = ?', args: [activity_id, cleanPhone] }));
     if (dup) return res.status(400).json({ error: '此電話號碼已報名此次活動' });
@@ -275,7 +279,41 @@ app.post('/api/leave-unlock', async (req, res) => {
 
     const updated = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE id = ?', args: [tier.id] }));
     console.log(`[請假] ${member.name} 請假，活動 ${activity_id}，${tier.name} leave_slots=${updated.leave_slots}`);
-    res.json({ success: true, member_name: member.name, leave_slots: updated.leave_slots, tier_name: tier.name, message: `${member.name} 請假成功，「${tier.name}」增加 1 個名額` });
+
+    // 自動將一般散打（第二個 tier）最早報名的確認者移至補季繳請假
+    const tier2 = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE activity_id = ? ORDER BY id ASC LIMIT 1 OFFSET 1', args: [activity_id] }));
+    let movedPerson = null;
+    let promotedPerson = null;
+
+    if (tier2) {
+      const firstTier2Reg = one(await db.execute({
+        sql: "SELECT * FROM registrations WHERE tier_id = ? AND status = 'confirmed' ORDER BY registered_at ASC LIMIT 1",
+        args: [tier2.id]
+      }));
+      if (firstTier2Reg) {
+        // 將此人移至補季繳請假 tier
+        await db.execute({ sql: 'UPDATE registrations SET tier_id = ? WHERE id = ?', args: [tier.id, firstTier2Reg.id] });
+        movedPerson = firstTier2Reg;
+        console.log(`[請假] ${firstTier2Reg.name} 從${tier2.name}移至${tier.name}`);
+
+        // 一般散打空出名額，自動遞補候補名單
+        const waitlistFirst = one(await db.execute({
+          sql: "SELECT * FROM registrations WHERE tier_id = ? AND status = 'waitlist' ORDER BY waitlist_position ASC LIMIT 1",
+          args: [tier2.id]
+        }));
+        if (waitlistFirst) {
+          await db.execute({ sql: "UPDATE registrations SET status = 'confirmed', waitlist_position = NULL WHERE id = ?", args: [waitlistFirst.id] });
+          await db.execute({ sql: "UPDATE registrations SET waitlist_position = waitlist_position - 1 WHERE tier_id = ? AND status = 'waitlist'", args: [tier2.id] });
+          promotedPerson = waitlistFirst;
+          console.log(`[請假] ${waitlistFirst.name} 從${tier2.name}候補升格`);
+        }
+      }
+    }
+
+    let message = `${member.name} 請假成功`;
+    if (movedPerson) message += `，${movedPerson.name} 已移至「${tier.name}」`;
+    if (promotedPerson) message += `，${promotedPerson.name} 從候補升格`;
+    res.json({ success: true, member_name: member.name, leave_slots: updated.leave_slots, tier_name: tier.name, moved_person: movedPerson?.name || null, promoted_person: promotedPerson?.name || null, message });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: '伺服器錯誤' });
