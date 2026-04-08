@@ -167,7 +167,7 @@
         container.innerHTML = '';
         container.classList.remove('hidden');
 
-        data.activity.tiers.slice(1).forEach(tier => {
+        data.activity.tiers.filter(t => !t.hidden).forEach(tier => {
           const isFull = tier.available === 0;
           const card = document.createElement('div');
           card.className = 'bg-white rounded-2xl shadow p-5';

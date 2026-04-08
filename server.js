@@ -64,8 +64,6 @@ async function initDB() {
   // 為舊有資料庫補上欄位（若不存在）
   try { await db.execute('ALTER TABLE tiers ADD COLUMN leave_slots INTEGER NOT NULL DEFAULT 0'); } catch (e) {}
   try { await db.execute('ALTER TABLE tiers ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0'); } catch (e) {}
-  // 確保每個活動的第一個 tier（補季繳請假）標記為不對外公開
-  await db.execute('UPDATE tiers SET hidden = 1 WHERE id IN (SELECT MIN(id) FROM tiers GROUP BY activity_id)');
 
   const defaults = [
     ['admin_password', 'admin123'],
@@ -78,6 +76,16 @@ async function initDB() {
   ];
   for (const [k, v] of defaults) {
     await db.execute({ sql: 'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', args: [k, v] });
+  }
+
+  // 根據 settings 的 tier1_name 來標記不對外公開的 tier（名稱比對，比 ID 排序更可靠）
+  const tier1Name = await getSetting('tier1_name');
+  const tier2Name = await getSetting('tier2_name');
+  if (tier1Name) {
+    await db.execute({ sql: 'UPDATE tiers SET hidden = 1 WHERE name = ?', args: [tier1Name] });
+  }
+  if (tier2Name) {
+    await db.execute({ sql: 'UPDATE tiers SET hidden = 0 WHERE name = ?', args: [tier2Name] });
   }
 }
 
@@ -205,9 +213,7 @@ app.post('/api/register', async (req, res) => {
 
     const tier = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE id = ? AND activity_id = ?', args: [tier_id, activity_id] }));
     if (!tier) return res.status(404).json({ error: '報名類型不存在' });
-    // 第一個 tier（補季繳請假）不開放直接報名
-    const firstTier = one(await db.execute({ sql: 'SELECT MIN(id) as min_id FROM tiers WHERE activity_id = ?', args: [activity_id] }));
-    if (firstTier && tier.id === Number(firstTier.min_id)) return res.status(403).json({ error: '此報名類型不開放直接報名' });
+    if (tier.hidden) return res.status(403).json({ error: '此報名類型不開放直接報名' });
 
     const dup = one(await db.execute({ sql: 'SELECT id FROM registrations WHERE activity_id = ? AND phone = ?', args: [activity_id, cleanPhone] }));
     if (dup) return res.status(400).json({ error: '此電話號碼已報名此次活動' });
@@ -271,9 +277,9 @@ app.post('/api/leave-unlock', async (req, res) => {
     const alreadyUsed = one(await db.execute({ sql: 'SELECT id FROM leave_logs WHERE member_id = ? AND activity_id = ?', args: [member.id, activity_id] }));
     if (alreadyUsed) return res.status(400).json({ error: `${member.name} 本次活動已請假過，每次活動限請假一次` });
 
-    // 取得第一個 tier（補季繳請假）
-    const tier = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE activity_id = ? ORDER BY id ASC LIMIT 1', args: [activity_id] }));
-    if (!tier) return res.status(404).json({ error: '找不到報名類型' });
+    // 取得補季繳請假 tier（hidden = 1）
+    const tier = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE activity_id = ? AND hidden = 1 LIMIT 1', args: [activity_id] }));
+    if (!tier) return res.status(404).json({ error: '找不到補季繳請假類型' });
 
     // +1 請假名額 + 記錄 log
     await db.execute({ sql: 'UPDATE tiers SET leave_slots = leave_slots + 1 WHERE id = ?', args: [tier.id] });
@@ -282,8 +288,8 @@ app.post('/api/leave-unlock', async (req, res) => {
     const updated = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE id = ?', args: [tier.id] }));
     console.log(`[請假] ${member.name} 請假，活動 ${activity_id}，${tier.name} leave_slots=${updated.leave_slots}`);
 
-    // 自動將一般散打（第二個 tier）最早報名的確認者移至補季繳請假
-    const tier2 = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE activity_id = ? ORDER BY id ASC LIMIT 1 OFFSET 1', args: [activity_id] }));
+    // 自動將一般散打（hidden = 0）最早報名的確認者移至補季繳請假
+    const tier2 = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE activity_id = ? AND hidden = 0 LIMIT 1', args: [activity_id] }));
     let movedPerson = null;
     let promotedPerson = null;
 
