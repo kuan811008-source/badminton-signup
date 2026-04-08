@@ -205,7 +205,9 @@ app.post('/api/register', async (req, res) => {
 
     const tier = one(await db.execute({ sql: 'SELECT * FROM tiers WHERE id = ? AND activity_id = ?', args: [tier_id, activity_id] }));
     if (!tier) return res.status(404).json({ error: '報名類型不存在' });
-    if (tier.hidden) return res.status(403).json({ error: '此報名類型不開放直接報名' });
+    // 第一個 tier（補季繳請假）不開放直接報名
+    const firstTier = one(await db.execute({ sql: 'SELECT MIN(id) as min_id FROM tiers WHERE activity_id = ?', args: [activity_id] }));
+    if (firstTier && tier.id === Number(firstTier.min_id)) return res.status(403).json({ error: '此報名類型不開放直接報名' });
 
     const dup = one(await db.execute({ sql: 'SELECT id FROM registrations WHERE activity_id = ? AND phone = ?', args: [activity_id, cleanPhone] }));
     if (dup) return res.status(400).json({ error: '此電話號碼已報名此次活動' });
