@@ -78,15 +78,9 @@ async function initDB() {
     await db.execute({ sql: 'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', args: [k, v] });
   }
 
-  // 根據 settings 的 tier1_name 來標記不對外公開的 tier（名稱比對，比 ID 排序更可靠）
-  const tier1Name = await getSetting('tier1_name');
-  const tier2Name = await getSetting('tier2_name');
-  if (tier1Name) {
-    await db.execute({ sql: 'UPDATE tiers SET hidden = 1 WHERE name = ?', args: [tier1Name] });
-  }
-  if (tier2Name) {
-    await db.execute({ sql: 'UPDATE tiers SET hidden = 0 WHERE name = ?', args: [tier2Name] });
-  }
+  // 根據名稱關鍵字標記不對外公開的 tier（含「季繳」或「請假」的為 hidden）
+  await db.execute('UPDATE tiers SET hidden = 0');
+  await db.execute("UPDATE tiers SET hidden = 1 WHERE name LIKE '%季繳%' OR name LIKE '%請假%'");
 }
 
 // ==================== HELPERS ====================
@@ -156,8 +150,9 @@ async function createActivity(dateStr) {
   });
 
   const actId = Number(result.lastInsertRowid);
-  await db.execute({ sql: 'INSERT INTO tiers (activity_id, name, price, capacity, hidden) VALUES (?, ?, ?, ?, 1)', args: [actId, settings.tier1_name, parseInt(settings.tier1_price) || 0, parseInt(settings.tier1_capacity) || 10] });
-  await db.execute({ sql: 'INSERT INTO tiers (activity_id, name, price, capacity, hidden) VALUES (?, ?, ?, ?, 0)', args: [actId, settings.tier2_name, parseInt(settings.tier2_price) || 0, parseInt(settings.tier2_capacity) || 10] });
+  const isLeave = name => name.includes('季繳') || name.includes('請假');
+  await db.execute({ sql: 'INSERT INTO tiers (activity_id, name, price, capacity, hidden) VALUES (?, ?, ?, ?, ?)', args: [actId, settings.tier1_name, parseInt(settings.tier1_price) || 0, parseInt(settings.tier1_capacity) || 10, isLeave(settings.tier1_name) ? 1 : 0] });
+  await db.execute({ sql: 'INSERT INTO tiers (activity_id, name, price, capacity, hidden) VALUES (?, ?, ?, ?, ?)', args: [actId, settings.tier2_name, parseInt(settings.tier2_price) || 0, parseInt(settings.tier2_capacity) || 10, isLeave(settings.tier2_name) ? 1 : 0] });
   console.log(`[系統] 建立活動：${dateStr}`);
   return actId;
 }
